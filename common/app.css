@@ -1,0 +1,15 @@
+.container {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	background-color: #dfdeee;
+	padding: 20px;
+	font-size: 14px;
+	line-height: 24px;
+	height: 1400rpx;
+	width: 100%;
+	}
+	
+	.kg {
+		width: 10rpx;
+	}

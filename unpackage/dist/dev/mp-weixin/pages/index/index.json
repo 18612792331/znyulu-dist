@@ -1,0 +1,8 @@
+{
+  "navigationBarTitleText": "uni-ui基础项目a",
+  "usingComponents": {
+    "u-icon": "/node-modules/uview-ui/components/u-icon/u-icon",
+    "u-button": "/node-modules/uview-ui/components/u-button/u-button",
+    "u-toast": "/node-modules/uview-ui/components/u-toast/u-toast"
+  }
+}
