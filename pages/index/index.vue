@@ -19,7 +19,7 @@
 				<u-button size="mini" :disabled="disabled" @click="cai(data.id)" plain><u-icon name="thumb-down-fill"></u-icon><div class="kg"/>{{data.caiCount}}</u-button>
 			</div>
 			<div class="copy_container">
-				<u-button size="mini" plain><u-icon name="order"></u-icon><div class="kg"/>投票榜</u-button>
+				<u-button size="mini" @click="rank" plain><u-icon name="order"></u-icon><div class="kg"/>投票榜</u-button>
 				<div style="width: 250rpx;"></div>
 				<u-button size="mini" plain><u-icon name="search"></u-icon><div class="kg"/>关键字搜索</u-button>
 			</div>
@@ -84,6 +84,11 @@
 					console.log(res)
 				})
 			},
+			rank() {
+				uni.navigateTo({
+				    url: '/pages/rank/index'
+				});
+			}
 
 		},
 		created() {
@@ -93,15 +98,6 @@
 </script>
 
 <style>
-	.box {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		width: 100%;
-		height: 1000rpx;
-		padding: 20rpx;
-		background-color: #FFFFFF;
-	}
 
 	.inner_box {
 		padding: 10px;

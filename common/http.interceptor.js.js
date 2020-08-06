@@ -4,7 +4,8 @@
 const install = (Vue, vm) => {
 	// 此为自定义配置参数，具体参数见上方说明
 	Vue.prototype.$u.http.setConfig({
-		baseUrl: 'http://girltujian.com/znyulu/api',
+		// baseUrl: 'http://girltujian.com/znyulu/api',
+		baseUrl: 'http://localhost:8001/api',
 		loadingText: '努力加载中~',
 		loadingTime: 800,
 		// 设置自定义头部content-type

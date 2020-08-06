@@ -5,14 +5,19 @@
 	"pages": [{
 		"path": "pages/index/index",
 		"style": {
-			"navigationBarTitleText": "uni-ui基础项目a",
+			"navigationBarTitleText": "",
 			"usingComponents": {}
 		}
-	}],
+	}, {
+        "path": "pages/rank/index",
+        "style": {
+            "navigationBarTitleText": "投票榜"
+        }
+    }],
 	"globalStyle": {
 		"navigationBarTextStyle": "white",
 		"navigationBarTitleText": "uni-app",
 		"navigationBarBackgroundColor": "#007AFF",
-		"backgroundColor": "#FFFFFF"
+		"backgroundColor": "#95b8e6"
 	}
 }

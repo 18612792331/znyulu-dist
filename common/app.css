@@ -13,3 +13,13 @@
 	.kg {
 		width: 10rpx;
 	}
+	
+	.box {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		width: 100%;
+		height: 1000rpx;
+		padding: 20rpx;
+		background-color: #FFFFFF;
+	}
