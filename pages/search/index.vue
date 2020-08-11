@@ -1,7 +1,13 @@
 <template>
 	<view class="container">
 		<div class="box">
-			<scroll-view scroll-y @scrolltolower="scroll" id="height" :style="'height:' + height + 'px ; padding: 10rpx;'">
+			<div class="searchbox">
+				<u-input style="width: 80%;" v-model="keyword" :type="type" border trim/>
+				<!-- <u-button @click="search" plain><div class="kg"/><u-icon name="search"></u-icon></u-button> -->
+				<div class="kg"/>
+				<u-icon @click="search" name="search" size="20px"></u-icon>
+			</div>
+			<view style="padding: 10rpx;">
 				<view v-for="(item, index) in data" :key="index" style="min-height: 70rpx; margin-top: 20px; border-bottom:1rpx dashed #cfe6f4">
 					{{item.text}}——<u-icon name="thumb-up-fill" color="#2979ff" size="28"></u-icon>{{item.zanCount}}
 					<div style="margin-bottom: 10rpx;">
@@ -10,7 +16,7 @@
 					
 				</view>
 				
-			</scroll-view>
+			</view>
 		</div>
 		<u-toast ref="uToast" />
 	</view>
@@ -20,48 +26,41 @@
 	export default {
 		data() {
 			return {
-				pageUtils: {
-					pageNo: 1,
-					pageSize: 30
-				},
+				type: 'text',
 				data: [],
-				height: 0,
+				keyword: ''
 				
 			}
 		},
 		methods: {
-			scroll(e) {
-			   uni.showLoading({
-			        title: '加载中...'
-			   });
-			   let that = this;
-			   that.pageUtils.pageNo+=1;
-			   this.getPage();
-			   
-			},
-			getPage() {
+			search() {
 				uni.showLoading({
 				     title: '加载中...'
 				});
 				let that = this;
-				let uri = '/rank/' + that.pageUtils.pageNo + '/' + that.pageUtils.pageSize
+				let uri = '/search/' + that.keyword
 				that.$u.get(uri, {
 				
 				}).then(res => {
-					console.log(res)
-					res.content.forEach(item => {
-						that.data.push(item)
-						
-					})
-					
+					that.data = res
 					// 回调成功 就关闭加载框
-					                    uni.hideLoading();
+					uni.hideLoading();
+					console.log(res)
+					console.log(res.length)
 					
-					                    //在提示一下，加载成功
-					                    uni.showToast({
-					                        title: '成功',
-					                        duration: 1500
-					                    });
+					//在提示一下，加载成功
+					if(res==[]) {
+						uni.showToast({
+						    title: '啥也没有',
+						    duration: 1500
+						});
+					} else {
+						uni.showToast({
+						    title: '成功',
+						    duration: 1500
+						});
+					}
+					
 				
 				})
 				
@@ -81,24 +80,18 @@
 			},
 			
 		},
-		mounted() {
-			let that = this;
-			
-			        // 获取设备宽度
-			        uni.getSystemInfo({
-			            success: function(res) {
-			                that.height = res.windowHeight;
-			            }
-			        });
-			
-		},
+
 		created() {
-			this.getPage()
+			
 			
 		}
 	}
 </script>
 
 <style>
-
+	.searchbox{
+		width: 100%;
+		display: inline-flex;
+		justify-content: space-around;
+	}
 </style>

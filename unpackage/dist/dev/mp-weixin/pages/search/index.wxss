@@ -1,0 +1,10 @@
+
+.searchbox{
+	width: 100%;
+	display: -webkit-inline-box;
+	display: -webkit-inline-flex;
+	display: inline-flex;
+	-webkit-justify-content: space-around;
+	        justify-content: space-around;
+}
+

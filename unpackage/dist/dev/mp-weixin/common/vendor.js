@@ -144,7 +144,7 @@ function queue(hooks, data) {
   for (var i = 0; i < hooks.length; i++) {
     var hook = hooks[i];
     if (promise) {
-      promise = Promise.then(wrapperHook(hook));
+      promise = Promise.resolve(wrapperHook(hook));
     } else {
       var res = hook(data);
       if (isPromise(res)) {
@@ -456,7 +456,9 @@ function processArgs(methodName, fromArgs) {var argsOption = arguments.length > 
           toArgs[keyOption.name ? keyOption.name : key] = keyOption.value;
         }
       } else if (CALLBACKS.indexOf(key) !== -1) {
-        toArgs[key] = processCallback(methodName, fromArgs[key], returnValue);
+        if (isFn(fromArgs[key])) {
+          toArgs[key] = processCallback(methodName, fromArgs[key], returnValue);
+        }
       } else {
         if (!keepFromArgs) {
           toArgs[key] = fromArgs[key];
@@ -571,10 +573,6 @@ var extraApi = /*#__PURE__*/Object.freeze({
 
 
 var getEmitter = function () {
-  if (typeof getUniEmitter === 'function') {
-    /* eslint-disable no-undef */
-    return getUniEmitter;
-  }
   var Emitter;
   return function getUniEmitter() {
     if (!Emitter) {
@@ -661,6 +659,8 @@ Component = function Component() {var options = arguments.length > 0 && argument
 var PAGE_EVENT_HOOKS = [
 'onPullDownRefresh',
 'onReachBottom',
+'onAddToFavorites',
+'onShareTimeline',
 'onShareAppMessage',
 'onPageScroll',
 'onResize',
@@ -760,7 +760,7 @@ function initData(vueOptions, context) {
     try {
       data = data.call(context); // 支持 Vue.prototype 上挂的数据
     } catch (e) {
-      if (Object({"NODE_ENV":"development","VUE_APP_PLATFORM":"mp-weixin","BASE_URL":"/"}).VUE_APP_DEBUG) {
+      if (Object({"VUE_APP_PLATFORM":"mp-weixin","NODE_ENV":"development","BASE_URL":"/"}).VUE_APP_DEBUG) {
         console.warn('根据 Vue 的 data 函数初始化小程序 data 失败，请尽量确保 data 函数中不访问 vm 对象，否则可能影响首次数据渲染速度。', data);
       }
     }
@@ -947,7 +947,18 @@ function getExtraValue(vm, dataPathsArray) {
       var propPath = dataPathArray[1];
       var valuePath = dataPathArray[3];
 
-      var vFor = dataPath ? vm.__get_value(dataPath, context) : context;
+      var vFor;
+      if (Number.isInteger(dataPath)) {
+        vFor = dataPath;
+      } else if (!dataPath) {
+        vFor = context;
+      } else if (typeof dataPath === 'string' && dataPath) {
+        if (dataPath.indexOf('#s#') === 0) {
+          vFor = dataPath.substr(3);
+        } else {
+          vFor = vm.__get_value(dataPath, context);
+        }
+      }
 
       if (Number.isInteger(vFor)) {
         context = value;
@@ -997,6 +1008,12 @@ function processEventExtra(vm, extra, event) {
         } else {
           if (dataPath === '$event') {// $event
             extraObj['$' + index] = event;
+          } else if (dataPath === 'arguments') {
+            if (event.detail && event.detail.__args__) {
+              extraObj['$' + index] = event.detail.__args__;
+            } else {
+              extraObj['$' + index] = [event];
+            }
           } else if (dataPath.indexOf('$event.') === 0) {// $event.target.value
             extraObj['$' + index] = vm.__get_value(dataPath.replace('$event.', ''), event);
           } else {
@@ -1077,6 +1094,15 @@ function isMatchEventType(eventType, optType) {
 
 }
 
+function getContextVm(vm) {
+  var $parent = vm.$parent;
+  // 父组件是 scoped slots 或者其他自定义组件时继续查找
+  while ($parent && $parent.$parent && ($parent.$options.generic || $parent.$parent.$options.generic || $parent.$scope._$vuePid)) {
+    $parent = $parent.$parent;
+  }
+  return $parent && $parent.$parent;
+}
+
 function handleEvent(event) {var _this = this;
   event = wrapper$1(event);
 
@@ -1109,12 +1135,8 @@ function handleEvent(event) {var _this = this;
         var methodName = eventArray[0];
         if (methodName) {
           var handlerCtx = _this.$vm;
-          if (
-          handlerCtx.$options.generic &&
-          handlerCtx.$parent &&
-          handlerCtx.$parent.$parent)
-          {// mp-weixin,mp-toutiao 抽象节点模拟 scoped slots
-            handlerCtx = handlerCtx.$parent.$parent;
+          if (handlerCtx.$options.generic) {// mp-weixin,mp-toutiao 抽象节点模拟 scoped slots
+            handlerCtx = getContextVm(handlerCtx) || handlerCtx;
           }
           if (methodName === '$emit') {
             handlerCtx.$emit.apply(handlerCtx,
@@ -1164,7 +1186,9 @@ var hooks = [
 'onShow',
 'onHide',
 'onError',
-'onPageNotFound'];
+'onPageNotFound',
+'onThemeChange',
+'onUnhandledRejection'];
 
 
 function parseBaseApp(vm, _ref3)
@@ -1498,7 +1522,7 @@ var uni = {};
 if (typeof Proxy !== 'undefined' && "mp-weixin" !== 'app-plus') {
   uni = new Proxy({}, {
     get: function get(target, name) {
-      if (target[name]) {
+      if (hasOwn(target, name)) {
         return target[name];
       }
       if (baseApi[name]) {
@@ -2273,13 +2297,7 @@ var uid = 0;
  * directives subscribing to it.
  */
 var Dep = function Dep () {
-  // fixed by xxxxxx (nvue vuex)
-  /* eslint-disable no-undef */
-  if(typeof SharedObject !== 'undefined'){
-    this.id = SharedObject.uid++;
-  } else {
-    this.id = uid++;
-  }
+  this.id = uid++;
   this.subs = [];
 };
 
@@ -2316,7 +2334,7 @@ Dep.prototype.notify = function notify () {
 // can be evaluated at a time.
 // fixed by xxxxxx (nvue shared vuex)
 /* eslint-disable no-undef */
-Dep.SharedObject = typeof SharedObject !== 'undefined' ? SharedObject : {};
+Dep.SharedObject = {};
 Dep.SharedObject.target = null;
 Dep.SharedObject.targetStack = [];
 
@@ -7096,7 +7114,7 @@ function type(obj) {
 
 function flushCallbacks$1(vm) {
     if (vm.__next_tick_callbacks && vm.__next_tick_callbacks.length) {
-        if (Object({"NODE_ENV":"development","VUE_APP_PLATFORM":"mp-weixin","BASE_URL":"/"}).VUE_APP_DEBUG) {
+        if (Object({"VUE_APP_PLATFORM":"mp-weixin","NODE_ENV":"development","BASE_URL":"/"}).VUE_APP_DEBUG) {
             var mpInstance = vm.$scope;
             console.log('[' + (+new Date) + '][' + (mpInstance.is || mpInstance.route) + '][' + vm._uid +
                 ']:flushCallbacks[' + vm.__next_tick_callbacks.length + ']');
@@ -7117,14 +7135,14 @@ function nextTick$1(vm, cb) {
     //1.nextTick 之前 已 setData 且 setData 还未回调完成
     //2.nextTick 之前存在 render watcher
     if (!vm.__next_tick_pending && !hasRenderWatcher(vm)) {
-        if(Object({"NODE_ENV":"development","VUE_APP_PLATFORM":"mp-weixin","BASE_URL":"/"}).VUE_APP_DEBUG){
+        if(Object({"VUE_APP_PLATFORM":"mp-weixin","NODE_ENV":"development","BASE_URL":"/"}).VUE_APP_DEBUG){
             var mpInstance = vm.$scope;
             console.log('[' + (+new Date) + '][' + (mpInstance.is || mpInstance.route) + '][' + vm._uid +
                 ']:nextVueTick');
         }
         return nextTick(cb, vm)
     }else{
-        if(Object({"NODE_ENV":"development","VUE_APP_PLATFORM":"mp-weixin","BASE_URL":"/"}).VUE_APP_DEBUG){
+        if(Object({"VUE_APP_PLATFORM":"mp-weixin","NODE_ENV":"development","BASE_URL":"/"}).VUE_APP_DEBUG){
             var mpInstance$1 = vm.$scope;
             console.log('[' + (+new Date) + '][' + (mpInstance$1.is || mpInstance$1.route) + '][' + vm._uid +
                 ']:nextMPTick');
@@ -7166,6 +7184,15 @@ function cloneWithData(vm) {
     ret[key] = vm[key];
     return ret
   }, ret);
+
+  // vue-composition-api
+  var rawBindings = vm.__secret_vfa_state__ && vm.__secret_vfa_state__.rawBindings;
+  if (rawBindings) {
+    Object.keys(rawBindings).forEach(function (key) {
+      ret[key] = vm[key];
+    });
+  }
+  
   //TODO 需要把无用数据处理掉，比如 list=>l0 则 list 需要移除，否则多传输一份数据
   Object.assign(ret, vm.$mp.data || {});
   if (
@@ -7200,7 +7227,7 @@ var patch = function(oldVnode, vnode) {
     });
     var diffData = this.$shouldDiffData === false ? data : diff(data, mpData);
     if (Object.keys(diffData).length) {
-      if (Object({"NODE_ENV":"development","VUE_APP_PLATFORM":"mp-weixin","BASE_URL":"/"}).VUE_APP_DEBUG) {
+      if (Object({"VUE_APP_PLATFORM":"mp-weixin","NODE_ENV":"development","BASE_URL":"/"}).VUE_APP_DEBUG) {
         console.log('[' + (+new Date) + '][' + (mpInstance.is || mpInstance.route) + '][' + this._uid +
           ']差量更新',
           JSON.stringify(diffData));
@@ -7370,7 +7397,7 @@ function getTarget(obj, path) {
   return getTarget(obj[key], parts.slice(1).join('.'))
 }
 
-function internalMixin(Vue ) {
+function internalMixin(Vue) {
 
   Vue.config.errorHandler = function(err, vm, info) {
     Vue.util.warn(("Error in " + info + ": \"" + (err.toString()) + "\""), vm);
@@ -7518,7 +7545,10 @@ var LIFECYCLE_HOOKS$1 = [
     'onShow',
     'onHide',
     'onUniNViewMessage',
+    'onPageNotFound',
+    'onThemeChange',
     'onError',
+    'onUnhandledRejection',
     //Page
     'onLoad',
     // 'onShow',
@@ -7528,6 +7558,8 @@ var LIFECYCLE_HOOKS$1 = [
     'onPullDownRefresh',
     'onReachBottom',
     'onTabItemTap',
+    'onAddToFavorites',
+    'onShareTimeline',
     'onShareAppMessage',
     'onResize',
     'onPageScroll',
@@ -7625,9 +7657,9 @@ module.exports = g;
 
 /***/ }),
 /* 4 */
-/*!*******************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/pages.json ***!
-  \*******************************************/
+/*!*************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/pages.json ***!
+  \*************************************************/
 /*! no static exports found */
 /***/ (function(module, exports) {
 
@@ -7768,9 +7800,9 @@ function normalizeComponent (
 
 /***/ }),
 /* 11 */
-/*!***************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/index.js ***!
-  \***************************************************************/
+/*!*********************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/index.js ***!
+  \*********************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -7902,9 +7934,9 @@ var install = function install(Vue) {
 
 /***/ }),
 /* 12 */
-/*!**************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/mixin/mixin.js ***!
-  \**************************************************************************/
+/*!********************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/mixin/mixin.js ***!
+  \********************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -7941,9 +7973,9 @@ var install = function install(Vue) {
 
 /***/ }),
 /* 13 */
-/*!****************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/request/index.js ***!
-  \****************************************************************************/
+/*!**********************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/request/index.js ***!
+  \**********************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8116,9 +8148,9 @@ new Request();exports.default = _default;
 
 /***/ }),
 /* 14 */
-/*!*********************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/deepMerge.js ***!
-  \*********************************************************************************/
+/*!***************************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/deepMerge.js ***!
+  \***************************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8156,9 +8188,9 @@ deepMerge;exports.default = _default;
 
 /***/ }),
 /* 15 */
-/*!*********************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/deepClone.js ***!
-  \*********************************************************************************/
+/*!***************************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/deepClone.js ***!
+  \***************************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8189,9 +8221,9 @@ deepClone;exports.default = _default;
 
 /***/ }),
 /* 16 */
-/*!****************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/test.js ***!
-  \****************************************************************************/
+/*!**********************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/test.js ***!
+  \**********************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8373,9 +8405,9 @@ function empty(value) {
 
 /***/ }),
 /* 17 */
-/*!***********************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/queryParams.js ***!
-  \***********************************************************************************/
+/*!*****************************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/queryParams.js ***!
+  \*****************************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8441,9 +8473,9 @@ queryParams;exports.default = _default;
 
 /***/ }),
 /* 18 */
-/*!*****************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/route.js ***!
-  \*****************************************************************************/
+/*!***********************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/route.js ***!
+  \***********************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8537,9 +8569,9 @@ route;exports.default = _default;
 
 /***/ }),
 /* 19 */
-/*!**********************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/timeFormat.js ***!
-  \**********************************************************************************/
+/*!****************************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/timeFormat.js ***!
+  \****************************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8576,9 +8608,9 @@ timeFormat;exports.default = _default;
 
 /***/ }),
 /* 20 */
-/*!********************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/timeFrom.js ***!
-  \********************************************************************************/
+/*!**************************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/timeFrom.js ***!
+  \**************************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8632,9 +8664,9 @@ timeFrom;exports.default = _default;
 
 /***/ }),
 /* 21 */
-/*!*************************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/colorGradient.js ***!
-  \*************************************************************************************/
+/*!*******************************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/colorGradient.js ***!
+  \*******************************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8741,9 +8773,9 @@ function rgbToHex(rgb) {
 
 /***/ }),
 /* 22 */
-/*!****************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/guid.js ***!
-  \****************************************************************************/
+/*!**********************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/guid.js ***!
+  \**********************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8792,9 +8824,9 @@ guid;exports.default = _default;
 
 /***/ }),
 /* 23 */
-/*!*****************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/color.js ***!
-  \*****************************************************************************/
+/*!***********************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/color.js ***!
+  \***********************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8839,9 +8871,9 @@ color;exports.default = _default;
 
 /***/ }),
 /* 24 */
-/*!*********************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/type2icon.js ***!
-  \*********************************************************************************/
+/*!***************************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/type2icon.js ***!
+  \***************************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8884,9 +8916,9 @@ type2icon;exports.default = _default;
 
 /***/ }),
 /* 25 */
-/*!***********************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/randomArray.js ***!
-  \***********************************************************************************/
+/*!*****************************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/randomArray.js ***!
+  \*****************************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8901,9 +8933,9 @@ randomArray;exports.default = _default;
 
 /***/ }),
 /* 26 */
-/*!*******************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/addUnit.js ***!
-  \*******************************************************************************/
+/*!*************************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/addUnit.js ***!
+  \*************************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8919,9 +8951,9 @@ function addUnit() {var value = arguments.length > 0 && arguments[0] !== undefin
 
 /***/ }),
 /* 27 */
-/*!******************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/random.js ***!
-  \******************************************************************************/
+/*!************************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/random.js ***!
+  \************************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8939,9 +8971,9 @@ random;exports.default = _default;
 
 /***/ }),
 /* 28 */
-/*!****************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/trim.js ***!
-  \****************************************************************************/
+/*!**********************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/trim.js ***!
+  \**********************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8964,9 +8996,9 @@ trim;exports.default = _default;
 
 /***/ }),
 /* 29 */
-/*!*****************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/toast.js ***!
-  \*****************************************************************************/
+/*!***********************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/toast.js ***!
+  \***********************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -8984,9 +9016,9 @@ toast;exports.default = _default;
 
 /***/ }),
 /* 30 */
-/*!*********************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/getParent.js ***!
-  \*********************************************************************************/
+/*!***************************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/getParent.js ***!
+  \***************************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -9041,9 +9073,9 @@ function getParent(name, keys) {
 
 /***/ }),
 /* 31 */
-/*!*******************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/function/$parent.js ***!
-  \*******************************************************************************/
+/*!*************************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/function/$parent.js ***!
+  \*************************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -9067,9 +9099,9 @@ function $parent(name, keys) {
 
 /***/ }),
 /* 32 */
-/*!****************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/config/config.js ***!
-  \****************************************************************************/
+/*!**********************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/config/config.js ***!
+  \**********************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -9090,9 +9122,9 @@ var version = '1.5.3';var _default =
 
 /***/ }),
 /* 33 */
-/*!****************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/uview-ui/libs/config/zIndex.js ***!
-  \****************************************************************************/
+/*!**********************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/config/zIndex.js ***!
+  \**********************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -9119,9 +9151,9 @@ Object.defineProperty(exports, "__esModule", { value: true });exports.default = 
 
 /***/ }),
 /* 34 */
-/*!**************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/common/http.interceptor.js.js ***!
-  \**************************************************************/
+/*!********************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/common/http.interceptor.js.js ***!
+  \********************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -9132,8 +9164,8 @@ Object.defineProperty(exports, "__esModule", { value: true });exports.default = 
 var install = function install(Vue, vm) {
   // 此为自定义配置参数，具体参数见上方说明
   Vue.prototype.$u.http.setConfig({
-    // baseUrl: 'http://girltujian.com/znyulu/api',
-    baseUrl: 'http://localhost:8001/api',
+    baseUrl: 'https://girltujian.com/znyulu/api',
+    // baseUrl: 'http://localhost:8001/api',
     loadingText: '努力加载中~',
     loadingTime: 800
     // 设置自定义头部content-type
@@ -9149,9 +9181,9 @@ var install = function install(Vue, vm) {
 
 /***/ }),
 /* 35 */
-/*!*****************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/vue-clipboard2/vue-clipboard.js ***!
-  \*****************************************************************************/
+/*!***********************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/vue-clipboard2/vue-clipboard.js ***!
+  \***********************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -9241,9 +9273,9 @@ if (true) {
 
 /***/ }),
 /* 36 */
-/*!*****************************************************************************!*\
-  !*** D:/PROJECT/uniapp/znyulu/node_modules/clipboard/dist/clipboard.min.js ***!
-  \*****************************************************************************/
+/*!***********************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/clipboard/dist/clipboard.min.js ***!
+  \***********************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -9254,6 +9286,116 @@ if (true) {
  * Licensed MIT © Zeno Rocha
  */
 !function (t, e) { true ? module.exports = e() : undefined;}(this, function () {return o = {}, r.m = n = [function (t, e) {t.exports = function (t) {var e;if ("SELECT" === t.nodeName) t.focus(), e = t.value;else if ("INPUT" === t.nodeName || "TEXTAREA" === t.nodeName) {var n = t.hasAttribute("readonly");n || t.setAttribute("readonly", ""), t.select(), t.setSelectionRange(0, t.value.length), n || t.removeAttribute("readonly"), e = t.value;} else {t.hasAttribute("contenteditable") && t.focus();var o = window.getSelection(),r = document.createRange();r.selectNodeContents(t), o.removeAllRanges(), o.addRange(r), e = o.toString();}return e;};}, function (t, e) {function n() {}n.prototype = { on: function on(t, e, n) {var o = this.e || (this.e = {});return (o[t] || (o[t] = [])).push({ fn: e, ctx: n }), this;}, once: function once(t, e, n) {var o = this;function r() {o.off(t, r), e.apply(n, arguments);}return r._ = e, this.on(t, r, n);}, emit: function emit(t) {for (var e = [].slice.call(arguments, 1), n = ((this.e || (this.e = {}))[t] || []).slice(), o = 0, r = n.length; o < r; o++) {n[o].fn.apply(n[o].ctx, e);}return this;}, off: function off(t, e) {var n = this.e || (this.e = {}),o = n[t],r = [];if (o && e) for (var i = 0, a = o.length; i < a; i++) {o[i].fn !== e && o[i].fn._ !== e && r.push(o[i]);}return r.length ? n[t] = r : delete n[t], this;} }, t.exports = n, t.exports.TinyEmitter = n;}, function (t, e, n) {var d = n(3),h = n(4);t.exports = function (t, e, n) {if (!t && !e && !n) throw new Error("Missing required arguments");if (!d.string(e)) throw new TypeError("Second argument must be a String");if (!d.fn(n)) throw new TypeError("Third argument must be a Function");if (d.node(t)) return s = e, f = n, (u = t).addEventListener(s, f), { destroy: function destroy() {u.removeEventListener(s, f);} };if (d.nodeList(t)) return a = t, c = e, l = n, Array.prototype.forEach.call(a, function (t) {t.addEventListener(c, l);}), { destroy: function destroy() {Array.prototype.forEach.call(a, function (t) {t.removeEventListener(c, l);});} };if (d.string(t)) return o = t, r = e, i = n, h(document.body, o, r, i);throw new TypeError("First argument must be a String, HTMLElement, HTMLCollection, or NodeList");var o, r, i, a, c, l, u, s, f;};}, function (t, n) {n.node = function (t) {return void 0 !== t && t instanceof HTMLElement && 1 === t.nodeType;}, n.nodeList = function (t) {var e = Object.prototype.toString.call(t);return void 0 !== t && ("[object NodeList]" === e || "[object HTMLCollection]" === e) && "length" in t && (0 === t.length || n.node(t[0]));}, n.string = function (t) {return "string" == typeof t || t instanceof String;}, n.fn = function (t) {return "[object Function]" === Object.prototype.toString.call(t);};}, function (t, e, n) {var a = n(5);function i(t, e, n, o, r) {var i = function (e, n, t, o) {return function (t) {t.delegateTarget = a(t.target, n), t.delegateTarget && o.call(e, t);};}.apply(this, arguments);return t.addEventListener(n, i, r), { destroy: function destroy() {t.removeEventListener(n, i, r);} };}t.exports = function (t, e, n, o, r) {return "function" == typeof t.addEventListener ? i.apply(null, arguments) : "function" == typeof n ? i.bind(null, document).apply(null, arguments) : ("string" == typeof t && (t = document.querySelectorAll(t)), Array.prototype.map.call(t, function (t) {return i(t, e, n, o, r);}));};}, function (t, e) {if ("undefined" != typeof Element && !Element.prototype.matches) {var n = Element.prototype;n.matches = n.matchesSelector || n.mozMatchesSelector || n.msMatchesSelector || n.oMatchesSelector || n.webkitMatchesSelector;}t.exports = function (t, e) {for (; t && 9 !== t.nodeType;) {if ("function" == typeof t.matches && t.matches(e)) return t;t = t.parentNode;}};}, function (t, e, n) {"use strict";n.r(e);var o = n(0),r = n.n(o),i = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {return typeof t;} : function (t) {return t && "function" == typeof Symbol && t.constructor === Symbol && t !== Symbol.prototype ? "symbol" : typeof t;};function a(t, e) {for (var n = 0; n < e.length; n++) {var o = e[n];o.enumerable = o.enumerable || !1, o.configurable = !0, "value" in o && (o.writable = !0), Object.defineProperty(t, o.key, o);}}function c(t) {!function (t, e) {if (!(t instanceof e)) throw new TypeError("Cannot call a class as a function");}(this, c), this.resolveOptions(t), this.initSelection();}var l = (function (t, e, n) {return e && a(t.prototype, e), n && a(t, n), t;}(c, [{ key: "resolveOptions", value: function value(t) {var e = 0 < arguments.length && void 0 !== t ? t : {};this.action = e.action, this.container = e.container, this.emitter = e.emitter, this.target = e.target, this.text = e.text, this.trigger = e.trigger, this.selectedText = "";} }, { key: "initSelection", value: function value() {this.text ? this.selectFake() : this.target && this.selectTarget();} }, { key: "selectFake", value: function value() {var t = this,e = "rtl" == document.documentElement.getAttribute("dir");this.removeFake(), this.fakeHandlerCallback = function () {return t.removeFake();}, this.fakeHandler = this.container.addEventListener("click", this.fakeHandlerCallback) || !0, this.fakeElem = document.createElement("textarea"), this.fakeElem.style.fontSize = "12pt", this.fakeElem.style.border = "0", this.fakeElem.style.padding = "0", this.fakeElem.style.margin = "0", this.fakeElem.style.position = "absolute", this.fakeElem.style[e ? "right" : "left"] = "-9999px";var n = window.pageYOffset || document.documentElement.scrollTop;this.fakeElem.style.top = n + "px", this.fakeElem.setAttribute("readonly", ""), this.fakeElem.value = this.text, this.container.appendChild(this.fakeElem), this.selectedText = r()(this.fakeElem), this.copyText();} }, { key: "removeFake", value: function value() {this.fakeHandler && (this.container.removeEventListener("click", this.fakeHandlerCallback), this.fakeHandler = null, this.fakeHandlerCallback = null), this.fakeElem && (this.container.removeChild(this.fakeElem), this.fakeElem = null);} }, { key: "selectTarget", value: function value() {this.selectedText = r()(this.target), this.copyText();} }, { key: "copyText", value: function value() {var e = void 0;try {e = document.execCommand(this.action);} catch (t) {e = !1;}this.handleResult(e);} }, { key: "handleResult", value: function value(t) {this.emitter.emit(t ? "success" : "error", { action: this.action, text: this.selectedText, trigger: this.trigger, clearSelection: this.clearSelection.bind(this) });} }, { key: "clearSelection", value: function value() {this.trigger && this.trigger.focus(), document.activeElement.blur(), window.getSelection().removeAllRanges();} }, { key: "destroy", value: function value() {this.removeFake();} }, { key: "action", set: function set(t) {var e = 0 < arguments.length && void 0 !== t ? t : "copy";if (this._action = e, "copy" !== this._action && "cut" !== this._action) throw new Error('Invalid "action" value, use either "copy" or "cut"');}, get: function get() {return this._action;} }, { key: "target", set: function set(t) {if (void 0 !== t) {if (!t || "object" !== (void 0 === t ? "undefined" : i(t)) || 1 !== t.nodeType) throw new Error('Invalid "target" value, use a valid Element');if ("copy" === this.action && t.hasAttribute("disabled")) throw new Error('Invalid "target" attribute. Please use "readonly" instead of "disabled" attribute');if ("cut" === this.action && (t.hasAttribute("readonly") || t.hasAttribute("disabled"))) throw new Error('Invalid "target" attribute. You can\'t cut text from elements with "readonly" or "disabled" attributes');this._target = t;}}, get: function get() {return this._target;} }]), c),u = n(1),s = n.n(u),f = n(2),d = n.n(f),h = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {return typeof t;} : function (t) {return t && "function" == typeof Symbol && t.constructor === Symbol && t !== Symbol.prototype ? "symbol" : typeof t;},p = function p(t, e, n) {return e && y(t.prototype, e), n && y(t, n), t;};function y(t, e) {for (var n = 0; n < e.length; n++) {var o = e[n];o.enumerable = o.enumerable || !1, o.configurable = !0, "value" in o && (o.writable = !0), Object.defineProperty(t, o.key, o);}}var m = (function (t, e) {if ("function" != typeof e && null !== e) throw new TypeError("Super expression must either be null or a function, not " + typeof e);t.prototype = Object.create(e && e.prototype, { constructor: { value: t, enumerable: !1, writable: !0, configurable: !0 } }), e && (Object.setPrototypeOf ? Object.setPrototypeOf(t, e) : t.__proto__ = e);}(v, s.a), p(v, [{ key: "resolveOptions", value: function value(t) {var e = 0 < arguments.length && void 0 !== t ? t : {};this.action = "function" == typeof e.action ? e.action : this.defaultAction, this.target = "function" == typeof e.target ? e.target : this.defaultTarget, this.text = "function" == typeof e.text ? e.text : this.defaultText, this.container = "object" === h(e.container) ? e.container : document.body;} }, { key: "listenClick", value: function value(t) {var e = this;this.listener = d()(t, "click", function (t) {return e.onClick(t);});} }, { key: "onClick", value: function value(t) {var e = t.delegateTarget || t.currentTarget;this.clipboardAction && (this.clipboardAction = null), this.clipboardAction = new l({ action: this.action(e), target: this.target(e), text: this.text(e), container: this.container, trigger: e, emitter: this });} }, { key: "defaultAction", value: function value(t) {return b("action", t);} }, { key: "defaultTarget", value: function value(t) {var e = b("target", t);if (e) return document.querySelector(e);} }, { key: "defaultText", value: function value(t) {return b("text", t);} }, { key: "destroy", value: function value() {this.listener.destroy(), this.clipboardAction && (this.clipboardAction.destroy(), this.clipboardAction = null);} }], [{ key: "isSupported", value: function value(t) {var e = 0 < arguments.length && void 0 !== t ? t : ["copy", "cut"],n = "string" == typeof e ? [e] : e,o = !!document.queryCommandSupported;return n.forEach(function (t) {o = o && !!document.queryCommandSupported(t);}), o;} }]), v);function v(t, e) {!function (t, e) {if (!(t instanceof e)) throw new TypeError("Cannot call a class as a function");}(this, v);var n = function (t, e) {if (!t) throw new ReferenceError("this hasn't been initialised - super() hasn't been called");return !e || "object" != typeof e && "function" != typeof e ? t : e;}(this, (v.__proto__ || Object.getPrototypeOf(v)).call(this));return n.resolveOptions(e), n.listenClick(t), n;}function b(t, e) {var n = "data-clipboard-" + t;if (e.hasAttribute(n)) return e.getAttribute(n);}e.default = m;}], r.c = o, r.d = function (t, e, n) {r.o(t, e) || Object.defineProperty(t, e, { enumerable: !0, get: n });}, r.r = function (t) {"undefined" != typeof Symbol && Symbol.toStringTag && Object.defineProperty(t, Symbol.toStringTag, { value: "Module" }), Object.defineProperty(t, "__esModule", { value: !0 });}, r.t = function (e, t) {if (1 & t && (e = r(e)), 8 & t) return e;if (4 & t && "object" == typeof e && e && e.__esModule) return e;var n = Object.create(null);if (r.r(n), Object.defineProperty(n, "default", { enumerable: !0, value: e }), 2 & t && "string" != typeof e) for (var o in e) {r.d(n, o, function (t) {return e[t];}.bind(null, o));}return n;}, r.n = function (t) {var e = t && t.__esModule ? function () {return t.default;} : function () {return t;};return r.d(e, "a", e), e;}, r.o = function (t, e) {return Object.prototype.hasOwnProperty.call(t, e);}, r.p = "", r(r.s = 6).default;function r(t) {if (o[t]) return o[t].exports;var e = o[t] = { i: t, l: !1, exports: {} };return n[t].call(e.exports, e, e.exports, r), e.l = !0, e.exports;}var n, o;});
+
+/***/ }),
+/* 37 */,
+/* 38 */,
+/* 39 */,
+/* 40 */,
+/* 41 */,
+/* 42 */,
+/* 43 */,
+/* 44 */,
+/* 45 */,
+/* 46 */,
+/* 47 */,
+/* 48 */,
+/* 49 */,
+/* 50 */,
+/* 51 */,
+/* 52 */,
+/* 53 */,
+/* 54 */,
+/* 55 */,
+/* 56 */,
+/* 57 */,
+/* 58 */,
+/* 59 */,
+/* 60 */,
+/* 61 */,
+/* 62 */,
+/* 63 */,
+/* 64 */,
+/* 65 */,
+/* 66 */,
+/* 67 */,
+/* 68 */,
+/* 69 */,
+/* 70 */,
+/* 71 */,
+/* 72 */,
+/* 73 */,
+/* 74 */,
+/* 75 */,
+/* 76 */,
+/* 77 */,
+/* 78 */,
+/* 79 */,
+/* 80 */,
+/* 81 */,
+/* 82 */,
+/* 83 */,
+/* 84 */,
+/* 85 */,
+/* 86 */,
+/* 87 */,
+/* 88 */
+/*!*********************************************************************************!*\
+  !*** E:/RESOURCE/uniapp/znyulu-dist/node_modules/uview-ui/libs/util/emitter.js ***!
+  \*********************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });exports.default = void 0; /**
+                                                                                                      * 递归使用 call 方式this指向
+                                                                                                      * @param componentName // 需要找的组件的名称
+                                                                                                      * @param eventName // 事件名称
+                                                                                                      * @param params // 需要传递的参数
+                                                                                                      */
+function _broadcast(componentName, eventName, params) {
+  // 循环子节点找到名称一样的子节点 否则 递归 当前子节点
+  this.$children.map(function (child) {
+    if (componentName === child.$options.name) {
+      child.$emit.apply(child, [eventName].concat(params));
+    } else {
+      _broadcast.apply(child, [componentName, eventName].concat(params));
+    }
+  });
+}var _default =
+{
+  methods: {
+    /**
+              * 派发 (向上查找) (一个)
+              * @param componentName // 需要找的组件的名称
+              * @param eventName // 事件名称
+              * @param params // 需要传递的参数
+              */
+    dispatch: function dispatch(componentName, eventName, params) {
+      var parent = this.$parent || this.$root; //$parent 找到最近的父节点 $root 根节点
+      var name = parent.$options.name; // 获取当前组件实例的name
+      // 如果当前有节点 && 当前没名称 且 当前名称等于需要传进来的名称的时候就去查找当前的节点
+      // 循环出当前名称的一样的组件实例
+      while (parent && (!name || name !== componentName)) {
+        parent = parent.$parent;
+        if (parent) {
+          name = parent.$options.name;
+        }
+      }
+      // 有节点表示当前找到了name一样的实例
+      if (parent) {
+        parent.$emit.apply(parent, [eventName].concat(params));
+      }
+    },
+    /**
+        * 广播 (向下查找) (广播多个)
+        * @param componentName // 需要找的组件的名称
+        * @param eventName // 事件名称
+        * @param params // 需要传递的参数
+        */
+    broadcast: function broadcast(componentName, eventName, params) {
+      _broadcast.call(this, componentName, eventName, params);
+    } } };exports.default = _default;
 
 /***/ })
 ]]);

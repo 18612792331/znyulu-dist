@@ -21,8 +21,9 @@
 			<div class="copy_container">
 				<u-button size="mini" @click="rank" plain><u-icon name="order"></u-icon><div class="kg"/>投票榜</u-button>
 				<div style="width: 250rpx;"></div>
-				<u-button size="mini" plain><u-icon name="search"></u-icon><div class="kg"/>关键字搜索</u-button>
+				<u-button size="mini" @click="search" plain><u-icon name="search"></u-icon><div class="kg"/>关键字搜索</u-button>
 			</div>
+			<div style="height: 500rpx;"></div>
 			
 
 
@@ -87,6 +88,11 @@
 			rank() {
 				uni.navigateTo({
 				    url: '/pages/rank/index'
+				});
+			},
+			search() {
+				uni.navigateTo({
+				    url: '/pages/search/index'
 				});
 			}
 

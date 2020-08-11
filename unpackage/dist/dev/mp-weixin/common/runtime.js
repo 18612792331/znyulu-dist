@@ -104,11 +104,11 @@
 /******/
 /******/
 /******/ 		// mini-css-extract-plugin CSS loading
-/******/ 		var cssChunks = {"node-modules/uview-ui/components/u-button/u-button":1,"node-modules/uview-ui/components/u-icon/u-icon":1,"node-modules/uview-ui/components/u-toast/u-toast":1};
+/******/ 		var cssChunks = {"node-modules/uview-ui/components/u-button/u-button":1,"node-modules/uview-ui/components/u-icon/u-icon":1,"node-modules/uview-ui/components/u-toast/u-toast":1,"node-modules/uview-ui/components/u-input/u-input":1};
 /******/ 		if(installedCssChunks[chunkId]) promises.push(installedCssChunks[chunkId]);
 /******/ 		else if(installedCssChunks[chunkId] !== 0 && cssChunks[chunkId]) {
 /******/ 			promises.push(installedCssChunks[chunkId] = new Promise(function(resolve, reject) {
-/******/ 				var href = "" + ({"node-modules/uview-ui/components/u-button/u-button":"node-modules/uview-ui/components/u-button/u-button","node-modules/uview-ui/components/u-icon/u-icon":"node-modules/uview-ui/components/u-icon/u-icon","node-modules/uview-ui/components/u-toast/u-toast":"node-modules/uview-ui/components/u-toast/u-toast"}[chunkId]||chunkId) + ".wxss";
+/******/ 				var href = "" + ({"node-modules/uview-ui/components/u-button/u-button":"node-modules/uview-ui/components/u-button/u-button","node-modules/uview-ui/components/u-icon/u-icon":"node-modules/uview-ui/components/u-icon/u-icon","node-modules/uview-ui/components/u-toast/u-toast":"node-modules/uview-ui/components/u-toast/u-toast","node-modules/uview-ui/components/u-input/u-input":"node-modules/uview-ui/components/u-input/u-input"}[chunkId]||chunkId) + ".wxss";
 /******/ 				var fullhref = __webpack_require__.p + href;
 /******/ 				var existingLinkTags = document.getElementsByTagName("link");
 /******/ 				for(var i = 0; i < existingLinkTags.length; i++) {
